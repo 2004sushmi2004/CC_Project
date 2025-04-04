@@ -1,0 +1,64 @@
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.0.1
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - kafka-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.0.1
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--list", "--bootstrap-server", "kafka:29092"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    networks:
+      - kafka-network
+
+  api-server:
+    build: .
+    container_name: api-server
+    ports:
+      - "5000:5000"
+    depends_on:
+      - kafka
+    networks:
+      - kafka-network
+    environment:
+      KAFKA_BROKER: kafka:29092
+
+  kafka-producer:
+    build: .
+    container_name: kafka-producer
+    command: bash -c "sleep 30 && python kafka_producer.py"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka-network
+    environment:
+      KAFKA_BROKER: kafka:29092
+    restart: unless-stopped
+
+networks:
+  kafka-network:
+    driver: bridge
